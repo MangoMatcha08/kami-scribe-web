@@ -16,8 +16,7 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.0);
-  const [pageWidth, setPageWidth] = useState<number>(0);
-  const [pageHeight, setPageHeight] = useState<number>(0);
+  const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({});
   const containerRef = useRef<HTMLDivElement>(null);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
@@ -25,8 +24,10 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
   };
 
   const onPageLoadSuccess = (page: any) => {
-    setPageWidth(page.width);
-    setPageHeight(page.height);
+    setPageSizes(sizes => ({
+      ...sizes,
+      [page.pageNumber]: { width: page.width, height: page.height }
+    }));
   };
 
   const goToPage = (page: number) => {
@@ -57,24 +58,43 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
                 </div>
               }
             >
-              <Page
-                pageNumber={pageNumber}
-                scale={scale}
-                onLoadSuccess={onPageLoadSuccess}
-                loading={
-                  <div className="flex items-center justify-center h-96 w-96 bg-gray-50">
-                    <div className="text-gray-500">Loading page...</div>
-                  </div>
-                }
-                renderAnnotationLayer={false}
-                renderTextLayer={true}
-              />
-              <AnnotationLayer
-                pageNumber={pageNumber}
-                scale={scale}
-                pageWidth={pageWidth}
-                pageHeight={pageHeight}
-              />
+              {/* Render all pages with annotation overlays */}
+              {Array.from({ length: numPages })
+                .map((_, idx) => {
+                  const pageNum = idx + 1;
+                  const size = pageSizes[pageNum] || { width: 0, height: 0 };
+                  return (
+                    <div
+                      key={pageNum}
+                      className="relative"
+                      style={{ width: size.width || undefined, height: size.height || undefined, padding: 0, margin: 0 }}
+                    >
+                      <Page
+                        pageNumber={pageNum}
+                        scale={scale}
+                        onLoadSuccess={onPageLoadSuccess}
+                        loading={
+                          <div className="flex items-center justify-center h-96 w-96 bg-gray-50">
+                            <div className="text-gray-500">Loading page...</div>
+                          </div>
+                        }
+                        renderAnnotationLayer={false}
+                        renderTextLayer={true}
+                        width={size.width || undefined}
+                        height={size.height || undefined}
+                      />
+                      {size.width > 0 && size.height > 0 && (
+                        <AnnotationLayer
+                          key={`annotation-${pageNum}-${size.width}x${size.height}`}
+                          pageNumber={pageNum}
+                          scale={scale}
+                          pageWidth={size.width}
+                          pageHeight={size.height}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
             </Document>
           </div>
         </div>
