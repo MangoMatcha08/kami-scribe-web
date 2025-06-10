@@ -10,66 +10,107 @@ interface AnnotationLayerProps {
 }
 
 export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
+  pageNumber,
+  scale,
   pageWidth,
   pageHeight
 }) => {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = React.useRef<any>(null);
 
+  // Initialize canvas only when dimensions are available
   React.useEffect(() => {
     if (!pageWidth || !pageHeight) return;
+
     let disposed = false;
-    import('fabric').then(mod => {
-      const fabric = mod;
-      if (fabricCanvasRef.current) {
-        fabricCanvasRef.current.dispose();
-      }
-      if (canvasRef.current) {
+    const initCanvas = async () => {
+      try {
+        const fabric = await import('fabric');
+        
+        // Dispose of previous canvas if it exists
+        if (fabricCanvasRef.current) {
+          fabricCanvasRef.current.dispose();
+        }
+
+        if (!canvasRef.current) return;
+
+        // Create new canvas with proper dimensions
         fabricCanvasRef.current = new fabric.Canvas(canvasRef.current, {
           backgroundColor: 'transparent',
           width: pageWidth,
           height: pageHeight,
+          selection: false,
+          renderOnAddRemove: true,
+          preserveObjectStacking: true,
         });
-        // Clear all objects before adding the rectangle
+
+        // Clear any existing objects
         fabricCanvasRef.current.clear();
-        // Add a visible rectangle for confirmation
+
+        // Add a test rectangle with 2% margin on all sides
+        const rectWidth = pageWidth * 0.96;
+        const rectHeight = pageHeight * 0.96;
         const rect = new fabric.Rect({
-          left: 50,
-          top: 50,
-          width: 100,
-          height: 50,
+          left: pageWidth * 0.02, // 2% margin left
+          top: pageHeight * 0.02, // 2% margin top
+          width: rectWidth,
+          height: rectHeight,
           fill: 'rgba(0,255,0,0.5)',
           stroke: 'green',
           strokeWidth: 2,
         });
+
         fabricCanvasRef.current.add(rect);
-        console.log('Fabric.js initialized on annotation layer, rectangle added');
+        
+        // Set zoom level
+        fabricCanvasRef.current.setZoom(scale);
+        fabricCanvasRef.current.renderAll();
+      } catch (error) {
+        console.error('Error initializing canvas:', error);
       }
-    });
+    };
+
+    initCanvas();
+
     return () => {
       if (fabricCanvasRef.current && !disposed) {
         fabricCanvasRef.current.dispose();
         disposed = true;
       }
     };
-  }, [pageWidth, pageHeight]);
+  }, [pageWidth, pageHeight]); // Remove scale from dependencies to prevent infinite updates
+
+  // Handle scale changes separately
+  React.useEffect(() => {
+    if (fabricCanvasRef.current) {
+      fabricCanvasRef.current.setZoom(scale);
+      fabricCanvasRef.current.renderAll();
+    }
+  }, [scale]);
 
   return (
-    <canvas
-      id="annotation-layer-canvas"
-      ref={canvasRef}
-      width={pageWidth || 300}
-      height={pageHeight || 300}
+    <div
+      className="absolute inset-0 pointer-events-none"
       style={{
         width: '100%',
         height: '100%',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        zIndex: 9999,
-        border: '2px solid green',
-        background: 'rgba(0,255,0,0.1)'
       }}
-    />
+    >
+      <canvas
+        id={`annotation-layer-canvas-${pageNumber}`}
+        ref={canvasRef}
+        width={pageWidth || 300}
+        height={pageHeight || 300}
+        style={{
+          width: '100%',
+          height: '100%',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          zIndex: 10,
+          pointerEvents: 'auto',
+        }}
+      />
+    </div>
   );
 };

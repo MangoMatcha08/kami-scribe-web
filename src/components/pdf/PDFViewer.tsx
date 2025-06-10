@@ -17,17 +17,22 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.0);
   const [pageSizes, setPageSizes] = useState<Record<number, { width: number; height: number }>>({});
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages);
   };
 
   const onPageLoadSuccess = (page: any) => {
-    setPageSizes(sizes => ({
-      ...sizes,
-      [page.pageNumber]: { width: page.width, height: page.height }
-    }));
+    setPageSizes(sizes => {
+      const currentSize = sizes[page.pageNumber];
+      if (currentSize?.width === page.width && currentSize?.height === page.height) {
+        return sizes;
+      }
+      return {
+        ...sizes,
+        [page.pageNumber]: { width: page.width, height: page.height }
+      };
+    });
   };
 
   const goToPage = (page: number) => {
@@ -36,14 +41,15 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
     }
   };
 
-  const zoomIn = () => setScale(prev => Math.min(prev + 0.2, 3.0));
-  const zoomOut = () => setScale(prev => Math.max(prev - 0.2, 0.5));
+  // Adjust zoom step size to be smaller
+  const zoomIn = () => setScale(prev => Math.min(prev + 0.1, 2.0));
+  const zoomOut = () => setScale(prev => Math.max(prev - 0.1, 0.5));
 
   return (
     <div className="flex flex-col h-full w-full">
-      <div className="flex-1 overflow-auto bg-gray-100" ref={containerRef}>
-        <div className="flex justify-center p-4">
-          <div className="relative bg-white shadow-lg">
+      <div className="flex-1 overflow-auto bg-gray-100">
+        <div className="flex justify-center py-8">
+          <div className="bg-white shadow-lg">
             <Document
               file={pdfUrl}
               onLoadSuccess={onDocumentLoadSuccess}
@@ -58,7 +64,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
                 </div>
               }
             >
-              {/* Render all pages with annotation overlays */}
               {Array.from({ length: numPages })
                 .map((_, idx) => {
                   const pageNum = idx + 1;
@@ -66,8 +71,12 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
                   return (
                     <div
                       key={pageNum}
-                      className="relative"
-                      style={{ width: size.width || undefined, height: size.height || undefined, padding: 0, margin: 0 }}
+                      className="relative mx-auto mb-8 last:mb-0"
+                      style={{
+                        width: size.width || undefined,
+                        height: size.height || undefined,
+                        padding: 0,
+                      }}
                     >
                       <Page
                         pageNumber={pageNum}
@@ -80,8 +89,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
                         }
                         renderAnnotationLayer={false}
                         renderTextLayer={true}
-                        width={size.width || undefined}
-                        height={size.height || undefined}
                       />
                       {size.width > 0 && size.height > 0 && (
                         <AnnotationLayer
@@ -99,15 +106,17 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
           </div>
         </div>
       </div>
-      
-      <PDFControls
-        pageNumber={pageNumber}
-        numPages={numPages}
-        scale={scale}
-        onPageChange={goToPage}
-        onZoomIn={zoomIn}
-        onZoomOut={zoomOut}
-      />
+      {/* Make PDFControls sticky at the bottom of the viewport */}
+      <div className="sticky bottom-0 left-0 w-full z-50 bg-gray-800">
+        <PDFControls
+          pageNumber={pageNumber}
+          numPages={numPages}
+          scale={scale}
+          onPageChange={goToPage}
+          onZoomIn={zoomIn}
+          onZoomOut={zoomOut}
+        />
+      </div>
     </div>
   );
 };
