@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState } from 'react';
-import { fabric } from 'fabric';
+import { Canvas as FabricCanvas, Rect, IText, Path } from 'fabric';
 import { useAnnotationStore } from '@/stores/annotationStore';
 
 interface AnnotationLayerProps {
@@ -17,25 +17,29 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   pageHeight
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = useRef<fabric.Canvas>();
+  const fabricCanvasRef = useRef<FabricCanvas>();
   const { currentTool, addAnnotation, annotations } = useAnnotationStore();
   const [isDrawing, setIsDrawing] = useState(false);
 
   useEffect(() => {
     if (canvasRef.current && pageWidth && pageHeight) {
-      const canvas = new fabric.Canvas(canvasRef.current, {
+      const canvas = new FabricCanvas(canvasRef.current, {
         width: pageWidth * scale,
         height: pageHeight * scale,
         backgroundColor: 'transparent',
-        selection: currentTool === 'select',
-        isDrawingMode: currentTool === 'drawing',
       });
 
-      fabricCanvasRef.current = canvas;
+      // Configure canvas based on current tool
+      canvas.selection = currentTool === 'select';
+      canvas.isDrawingMode = currentTool === 'drawing';
 
-      // Configure drawing brush
-      canvas.freeDrawingBrush.width = 2;
-      canvas.freeDrawingBrush.color = '#ff0000';
+      // Configure drawing brush for drawing mode
+      if (canvas.freeDrawingBrush) {
+        canvas.freeDrawingBrush.width = 2;
+        canvas.freeDrawingBrush.color = '#ff0000';
+      }
+
+      fabricCanvasRef.current = canvas;
 
       // Handle annotation creation based on current tool
       canvas.on('mouse:down', handleMouseDown);
@@ -48,13 +52,13 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     }
   }, [pageWidth, pageHeight, scale, currentTool]);
 
-  const handleMouseDown = (event: fabric.IEvent) => {
+  const handleMouseDown = (event: any) => {
     if (!event.pointer || !fabricCanvasRef.current) return;
     
     setIsDrawing(true);
     
     if (currentTool === 'highlight') {
-      const rect = new fabric.Rect({
+      const rect = new Rect({
         left: event.pointer.x,
         top: event.pointer.y,
         width: 100,
@@ -68,14 +72,13 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       fabricCanvasRef.current.add(rect);
       saveAnnotation('highlight', event.pointer.x, event.pointer.y, 100, 20);
     } else if (currentTool === 'text') {
-      const text = new fabric.IText('Click to edit', {
+      const text = new IText('Click to edit', {
         left: event.pointer.x,
         top: event.pointer.y,
         fontFamily: 'Arial',
         fontSize: 16,
         fill: '#000000',
         selectable: true,
-        editable: true,
       });
       
       fabricCanvasRef.current.add(text);
@@ -87,7 +90,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     setIsDrawing(false);
   };
 
-  const handlePathCreated = (event: fabric.IEvent & { path: fabric.Path }) => {
+  const handlePathCreated = (event: any) => {
     if (currentTool === 'drawing' && event.path) {
       const pathBounds = event.path.getBoundingRect();
       saveAnnotation('drawing', pathBounds.left, pathBounds.top, pathBounds.width, pathBounds.height);
