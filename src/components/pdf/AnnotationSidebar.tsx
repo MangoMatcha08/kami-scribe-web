@@ -4,13 +4,19 @@ import {
   Image,
   Text,
   Circle,
-  BookOpen
+  BookOpen,
+  Trash2,
+  Undo2
 } from 'lucide-react';
 import { useAnnotationStore } from '@/stores/annotationStore';
 import { Button } from '@/components/ui/button';
 
 export const AnnotationSidebar = () => {
-  const { currentTool, setCurrentTool } = useAnnotationStore();
+  // Use Zustand selectors for all store values/actions
+  const currentTool = useAnnotationStore(state => state.currentTool);
+  const setCurrentTool = useAnnotationStore(state => state.setCurrentTool);
+  const clearAnnotations = useAnnotationStore(state => state.clearAnnotations);
+  const undoAnnotation = useAnnotationStore(state => state.undoAnnotation);
 
   const tools = [
     { id: 'text', icon: Text, label: 'Text' },
@@ -36,6 +42,27 @@ export const AnnotationSidebar = () => {
           <span className="text-xs font-medium leading-tight">{label}</span>
         </Button>
       ))}
+      <div className="h-4" />
+      <Button
+        variant="ghost"
+        size="icon"
+        className="w-12 h-12 border-2 flex flex-col items-center justify-center text-red-600 border-gray-300 hover:bg-red-50 hover:border-red-400"
+        onClick={clearAnnotations}
+        title="Clear all annotations"
+      >
+        <Trash2 className="w-5 h-5 mb-1" />
+        <span className="text-xs font-medium leading-tight">Clear</span>
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="w-12 h-12 border-2 flex flex-col items-center justify-center text-yellow-600 border-gray-300 hover:bg-yellow-50 hover:border-yellow-400"
+        onClick={undoAnnotation}
+        title="Undo last annotation"
+      >
+        <Undo2 className="w-5 h-5 mb-1" />
+        <span className="text-xs font-medium leading-tight">Undo</span>
+      </Button>
     </div>
   );
 };

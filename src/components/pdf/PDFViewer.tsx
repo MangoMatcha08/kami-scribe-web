@@ -92,7 +92,6 @@ export const PDFViewer: React.FC<PDFViewerProps> = ({ pdfUrl }) => {
                       />
                       {size.width > 0 && size.height > 0 && (
                         <AnnotationLayer
-                          key={`annotation-${pageNum}-${size.width}x${size.height}`}
                           pageNumber={pageNum}
                           scale={scale}
                           pageWidth={size.width}

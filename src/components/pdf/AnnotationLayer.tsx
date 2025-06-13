@@ -1,6 +1,22 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Canvas as FabricCanvas, Rect, IText, Path } from 'fabric';
+import { Canvas as FabricCanvas, Rect, IText, Path, Object as FabricObject } from 'fabric';
 import { useAnnotationStore } from '@/stores/annotationStore';
+import { 
+  PDFCoordinates, 
+  ViewportCoordinates, 
+  CanvasCoordinates,
+  viewportToCanvasCoords,
+  canvasToPDFCoords,
+  pdfToCanvasCoords,
+  getViewportCoords
+} from '@/lib/coordinates';
+
+// Extend FabricObject to include our custom data property
+interface HighlightObject extends FabricObject {
+  data?: {
+    id: string;
+  };
+}
 
 interface AnnotationLayerProps {
   pageNumber: number;
@@ -16,7 +32,20 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   pageHeight
 }) => {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const fabricCanvasRef = React.useRef<any>(null);
+  const fabricCanvasRef = React.useRef<FabricCanvas | null>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const currentTool = useAnnotationStore(state => state.currentTool);
+  const addAnnotation = useAnnotationStore(state => state.addAnnotation);
+  const annotations = useAnnotationStore(state => state.annotations);
+  
+  // Track drawing state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startCoords, setStartCoords] = useState<CanvasCoordinates | null>(null);
+  const [currentRect, setCurrentRect] = useState<Rect | null>(null);
+
+  // Debug: Log all annotations and currentTool on every render
+  console.log('[AnnotationLayer] annotations:', annotations);
+  console.log('[AnnotationLayer] currentTool:', currentTool);
 
   // Initialize canvas only when dimensions are available
   React.useEffect(() => {
@@ -46,24 +75,45 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
 
         // Clear any existing objects
         fabricCanvasRef.current.clear();
+        
+        // Set initial zoom level
+        fabricCanvasRef.current.setZoom(scale);
+        
+        // Render existing highlights
+        const pageHighlights = annotations.filter(
+          a => a.type === 'highlight' && a.pageNumber === pageNumber
+        );
+        // Debug: Log page highlights
+        console.log(`[AnnotationLayer] pageHighlights for page ${pageNumber}:`, pageHighlights);
 
-        // Add a test rectangle with 2% margin on all sides
-        const rectWidth = pageWidth * 0.96;
-        const rectHeight = pageHeight * 0.96;
-        const rect = new fabric.Rect({
-          left: pageWidth * 0.02, // 2% margin left
-          top: pageHeight * 0.02, // 2% margin top
-          width: rectWidth,
-          height: rectHeight,
-          fill: 'rgba(0,255,0,0.5)',
-          stroke: 'green',
-          strokeWidth: 2,
+        pageHighlights.forEach(highlight => {
+          const canvasCoords = pdfToCanvasCoords(
+            {
+              x: highlight.coordinates.x,
+              y: highlight.coordinates.y,
+              width: highlight.coordinates.width || 0,
+              height: highlight.coordinates.height || 0,
+              pageNumber: highlight.pageNumber
+            },
+            fabricCanvasRef.current!,
+            scale
+          );
+
+          const rect = new fabric.Rect({
+            left: canvasCoords.x,
+            top: canvasCoords.y,
+            width: canvasCoords.width || 0,
+            height: canvasCoords.height || 0,
+            fill: `rgba(255, 255, 0, ${highlight.styles.opacity})`,
+            stroke: 'rgba(255, 255, 0, 0.8)',
+            strokeWidth: 1,
+            selectable: false,
+            data: { id: highlight.id }
+          });
+
+          fabricCanvasRef.current!.add(rect);
         });
 
-        fabricCanvasRef.current.add(rect);
-        
-        // Set zoom level
-        fabricCanvasRef.current.setZoom(scale);
         fabricCanvasRef.current.renderAll();
       } catch (error) {
         console.error('Error initializing canvas:', error);
@@ -78,19 +128,168 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         disposed = true;
       }
     };
-  }, [pageWidth, pageHeight]); // Remove scale from dependencies to prevent infinite updates
+  }, [pageWidth, pageHeight, pageNumber, annotations, scale]);
 
-  // Handle scale changes separately
+  // Handle scale changes
   React.useEffect(() => {
-    if (fabricCanvasRef.current) {
-      fabricCanvasRef.current.setZoom(scale);
-      fabricCanvasRef.current.renderAll();
+    if (!fabricCanvasRef.current) return;
+
+    // Update zoom level
+    fabricCanvasRef.current.setZoom(scale);
+    
+    // Update all object positions and sizes
+    fabricCanvasRef.current.getObjects().forEach(obj => {
+      const highlightObj = obj as HighlightObject;
+      if (highlightObj.data?.id) {
+        const highlight = annotations.find(a => a.id === highlightObj.data.id);
+        if (highlight) {
+          const canvasCoords = pdfToCanvasCoords(
+            {
+              x: highlight.coordinates.x,
+              y: highlight.coordinates.y,
+              width: highlight.coordinates.width || 0,
+              height: highlight.coordinates.height || 0,
+              pageNumber: highlight.pageNumber
+            },
+            fabricCanvasRef.current!,
+            scale
+          );
+
+          highlightObj.set({
+            left: canvasCoords.x,
+            top: canvasCoords.y,
+            width: canvasCoords.width || 0,
+            height: canvasCoords.height || 0,
+          });
+        }
+      }
+    });
+
+    fabricCanvasRef.current.renderAll();
+  }, [scale, annotations]);
+
+  // Mouse event handlers
+  const handleMouseDown = (event: React.MouseEvent) => {
+    console.log('[AnnotationLayer] handleMouseDown fired');
+    if (currentTool !== 'highlight' || !fabricCanvasRef.current || !containerRef.current) return;
+
+    const viewportCoords = getViewportCoords(event.nativeEvent);
+    const canvasCoords = viewportToCanvasCoords(viewportCoords, containerRef.current, scale);
+    
+    setIsDrawing(true);
+    setStartCoords(canvasCoords);
+
+    // Create a new rectangle at the start position
+    const rect = new Rect({
+      left: canvasCoords.x,
+      top: canvasCoords.y,
+      width: 0,
+      height: 0,
+      fill: 'rgba(255, 255, 0, 0.3)',
+      stroke: 'rgba(255, 255, 0, 0.8)',
+      strokeWidth: 1,
+      selectable: false,
+    });
+
+    fabricCanvasRef.current.add(rect);
+    setCurrentRect(rect);
+    fabricCanvasRef.current.renderAll();
+    console.log('[AnnotationLayer] Rectangle added to canvas');
+  };
+
+  const handleMouseMove = (event: React.MouseEvent) => {
+    if (!isDrawing || !fabricCanvasRef.current || !containerRef.current || !startCoords || !currentRect) return;
+    console.log('[AnnotationLayer] handleMouseMove fired');
+    const viewportCoords = getViewportCoords(event.nativeEvent);
+    const canvasCoords = viewportToCanvasCoords(viewportCoords, containerRef.current, scale);
+
+    // Calculate rectangle dimensions
+    const width = canvasCoords.x - startCoords.x;
+    const height = canvasCoords.y - startCoords.y;
+
+    // Update rectangle position and size
+    currentRect.set({
+      left: width < 0 ? canvasCoords.x : startCoords.x,
+      top: height < 0 ? canvasCoords.y : startCoords.y,
+      width: Math.abs(width),
+      height: Math.abs(height),
+    });
+
+    fabricCanvasRef.current.renderAll();
+  };
+
+  const handleMouseUp = (event: React.MouseEvent) => {
+    console.log('[AnnotationLayer] handleMouseUp fired');
+    if (!isDrawing || !fabricCanvasRef.current || !containerRef.current || !startCoords || !currentRect) return;
+    console.log('[AnnotationLayer] handleMouseUp conditions passed');
+
+    const viewportCoords = getViewportCoords(event.nativeEvent);
+    const canvasCoords = viewportToCanvasCoords(viewportCoords, containerRef.current, scale);
+
+    // Calculate final dimensions
+    const width = canvasCoords.x - startCoords.x;
+    const height = canvasCoords.y - startCoords.y;
+
+    // Only create annotation if the rectangle has a minimum size
+    if (Math.abs(width) > 5 && Math.abs(height) > 5) {
+      // Convert to PDF coordinates for storage
+      const pdfCoords = canvasToPDFCoords(
+        {
+          x: width < 0 ? canvasCoords.x : startCoords.x,
+          y: height < 0 ? canvasCoords.y : startCoords.y,
+          width: Math.abs(width),
+          height: Math.abs(height),
+        },
+        fabricCanvasRef.current,
+        scale,
+        pageNumber
+      );
+      // Debug: Log annotation being added
+      console.log('[AnnotationLayer] addAnnotation', {
+        type: 'highlight',
+        pageNumber,
+        coordinates: {
+          x: pdfCoords.x,
+          y: pdfCoords.y,
+          width: pdfCoords.width,
+          height: pdfCoords.height,
+        },
+        styles: {
+          color: 'yellow',
+          opacity: 0.3,
+        },
+      });
+      // Add to annotation store
+      addAnnotation({
+        type: 'highlight',
+        pageNumber,
+        coordinates: {
+          x: pdfCoords.x,
+          y: pdfCoords.y,
+          width: pdfCoords.width,
+          height: pdfCoords.height,
+        },
+        styles: {
+          color: 'yellow',
+          opacity: 0.3,
+        },
+      });
+    } else {
+      // Remove the rectangle if it's too small
+      fabricCanvasRef.current.remove(currentRect);
     }
-  }, [scale]);
+
+    // Always reset local drawing state after mouse up
+    setIsDrawing(false);
+    setStartCoords(null);
+    setCurrentRect(null);
+    fabricCanvasRef.current.renderAll();
+  };
 
   return (
     <div
-      className="absolute inset-0 pointer-events-none"
+      ref={containerRef}
+      className="absolute inset-0"
       style={{
         width: '100%',
         height: '100%',
@@ -108,8 +307,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
           top: 0,
           left: 0,
           zIndex: 10,
-          pointerEvents: 'auto',
+          pointerEvents: currentTool === 'highlight' ? 'auto' : 'none',
         }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
       />
     </div>
   );

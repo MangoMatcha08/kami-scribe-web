@@ -1,3 +1,4 @@
+console.log('[Zustand] annotationStore instance', Math.random());
 
 import { create } from 'zustand';
 
@@ -30,6 +31,8 @@ interface AnnotationStore {
   addAnnotation: (annotation: Omit<Annotation, 'id' | 'createdAt'>) => void;
   selectAnnotation: (annotation: Annotation | null) => void;
   deleteAnnotation: (id: string) => void;
+  clearAnnotations: () => void;
+  undoAnnotation: () => void;
 }
 
 export const useAnnotationStore = create<AnnotationStore>((set, get) => ({
@@ -56,5 +59,11 @@ export const useAnnotationStore = create<AnnotationStore>((set, get) => ({
   deleteAnnotation: (id) => set(state => ({
     annotations: state.annotations.filter(a => a.id !== id),
     selectedAnnotation: state.selectedAnnotation?.id === id ? null : state.selectedAnnotation
+  })),
+
+  clearAnnotations: () => set({ annotations: [] }),
+
+  undoAnnotation: () => set(state => ({
+    annotations: state.annotations.slice(0, -1)
   })),
 }));
